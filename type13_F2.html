@@ -1,0 +1,914 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>打字挑戰 (完美修正輸入法計分版)</title>
+    <script src="https://cdn.jsdelivr.net/npm/pinyin-pro@3.21.0/dist/index.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #f0f2f5;
+            --sidebar-bg: #2c3e50;
+            --sidebar-text: #ecf0f1;
+            --cursor-bg: #2ecc71;      /* 綠色光標 */
+            --cursor-text: #ffffff;
+            --text-correct: #2980b9;   /* 藍色正確 */
+            --text-wrong: #c0392b;     /* 紅色錯誤 */
+            --text-default: #7f8c8d;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            font-family: "Microsoft JhengHei", "Heiti TC", sans-serif;
+            background-color: var(--bg-color);
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+        }
+
+        .main-area {
+            width: 75%;
+            height: 100%;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header-controls {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 15px;
+            padding: 15px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        input[type="text"] {
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 16px;
+            width: 180px;
+        }
+
+        button, .file-btn {
+            padding: 10px 18px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 15px;
+            color: white;
+            transition: opacity 0.2s;
+            display: inline-block;
+            text-align: center;
+        }
+        
+        button:hover, .file-btn:hover { opacity: 0.9; }
+        .file-btn { background-color: #7f8c8d; }
+        #fileInput { display: none; }
+        #btn-reset { background-color: #e67e22; }
+        #btn-export { background-color: #27ae60; }
+
+        #typing-board {
+            flex: 1;
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            font-size: 26px;
+            line-height: 2.2;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            cursor: text;
+            position: relative;
+        }
+
+        #hidden-input {
+            position: absolute;
+            opacity: 0;
+            top: 0;
+            left: 0;
+            height: 0;
+            width: 0;
+            z-index: -1;
+        }
+
+        .char {
+            padding: 4px 2px;
+            margin: 0 1px;
+            border-radius: 3px;
+            color: var(--text-default);
+            border-bottom: 2px solid transparent;
+            transition: background-color 0.1s;
+        }
+
+        .char.current {
+            background-color: var(--cursor-bg);
+            color: var(--cursor-text) !important;
+            box-shadow: 0 0 5px rgba(46, 204, 113, 0.5);
+        }
+
+        .char.correct { color: var(--text-correct); font-weight: bold; }
+        .char.wrong { color: var(--text-wrong); background-color: #fadbd8; font-weight: bold; }
+        .char.current.wrong { background-color: #c0392b; color: white !important; }
+
+        .sidebar {
+            width: 25%;
+            background-color: var(--sidebar-bg);
+            color: var(--sidebar-text);
+            padding: 30px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            box-shadow: -4px 0 15px rgba(0,0,0,0.1);
+            z-index: 10;
+        }
+
+        .stat-group { margin-bottom: 40px; text-align: center; }
+        .stat-label { font-size: 16px; color: #bdc3c7; margin-bottom: 8px; letter-spacing: 1px; }
+        .stat-val { font-size: 42px; font-weight: bold; font-family: 'Courier New', Courier, monospace; }
+        .stat-val small { font-size: 18px; color: #95a5a6; }
+
+        #pinyin-box {
+            position: fixed;
+            background: rgba(0, 0, 0, 0.85);
+            color: #fff;
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-size: 18px;
+            pointer-events: none;
+            display: none;
+            z-index: 9999;
+            white-space: nowrap;
+        }
+
+        /* 彈出計分視窗 (Modal) 樣式 */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(44, 62, 80, 0.7);
+            backdrop-filter: blur(5px);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 10000;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .modal-overlay.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .score-modal {
+            background: white;
+            width: 90%;
+            max-width: 520px;
+            border-radius: 16px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.2);
+            padding: 35px;
+            text-align: center;
+            transform: scale(0.95);
+            transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        .modal-overlay.active .score-modal {
+            transform: scale(1);
+        }
+
+        .modal-title {
+            font-size: 26px;
+            font-weight: bold;
+            color: var(--sidebar-bg);
+            margin-bottom: 6px;
+            letter-spacing: 1px;
+        }
+
+        .modal-subtitle {
+            font-size: 14px;
+            color: #7f8c8d;
+            margin-bottom: 24px;
+        }
+
+        .score-badge-container {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 24px;
+            border: 1px dashed #cbd5e1;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);
+        }
+
+        .score-label {
+            font-size: 15px;
+            color: #7f8c8d;
+            margin-bottom: 6px;
+            font-weight: bold;
+        }
+
+        .score-value {
+            font-size: 64px;
+            font-weight: 900;
+            color: #e67e22;
+            line-height: 1;
+            margin-bottom: 8px;
+            font-family: 'Courier New', Courier, monospace;
+        }
+
+        .score-stars {
+            font-size: 26px;
+            letter-spacing: 4px;
+            margin-bottom: 12px;
+        }
+
+        /* 評分拆解面板 */
+        .score-breakdown {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin: 15px auto 5px auto;
+            max-width: 320px;
+            padding: 12px;
+            background: rgba(230, 126, 34, 0.08);
+            border-radius: 8px;
+            border: 1px solid rgba(230, 126, 34, 0.2);
+            text-align: left;
+            font-size: 14px;
+        }
+
+        .breakdown-item {
+            display: flex;
+            justify-content: space-between;
+            color: #34495e;
+        }
+
+        .breakdown-item strong {
+            color: #e67e22;
+        }
+
+        .feedback-text {
+            font-size: 16px;
+            color: #2c3e50;
+            font-weight: bold;
+            line-height: 1.5;
+        }
+
+        .modal-stats-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+            margin-bottom: 30px;
+        }
+
+        .modal-stat-card {
+            background: #f8f9fa;
+            border: 1px solid #f1f2f6;
+            padding: 14px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .modal-stat-label {
+            font-size: 12px;
+            color: #95a5a6;
+            margin-bottom: 6px;
+            font-weight: bold;
+        }
+
+        .modal-stat-value {
+            font-size: 18px;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+
+        .modal-btn-group {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+        }
+
+        .modal-btn {
+            flex: 1;
+            padding: 12px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 15px;
+            font-weight: bold;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
+
+        .modal-btn:hover {
+            opacity: 0.9;
+            transform: translateY(-1px);
+        }
+
+        .modal-btn:active {
+            transform: translateY(0);
+        }
+
+        .modal-btn-export {
+            background-color: #27ae60;
+            color: white;
+        }
+
+        .modal-btn-reset {
+            background-color: #e67e22;
+            color: white;
+        }
+
+        .modal-btn-close {
+            background-color: #7f8c8d;
+            color: white;
+            max-width: 100px;
+        }
+    </style>
+</head>
+<body>
+
+    <textarea id="hidden-input" autocomplete="off" spellcheck="false"></textarea>
+    <div id="pinyin-box"></div>
+
+    <div class="main-area">
+        <div class="header-controls">
+            <label for="fileInput" class="file-btn">📂 讀取檔案</label>
+            <input type="file" id="fileInput" accept=".txt">
+            <input type="text" id="challenger" placeholder="挑戰者姓名">
+            <button id="btn-reset">🔄 重置</button>
+            <button id="btn-export">🏆 完成計分</button>
+        </div>
+        <div id="typing-board">請先讀取檔案，或直接在此區域嘗試打字...</div>
+    </div>
+
+    <div class="sidebar">
+        <div class="stat-group">
+            <div class="stat-label">正確 / 錯誤</div>
+            <div class="stat-val">
+                <span style="color:#3498db" id="disp-correct">0</span> / 
+                <span style="color:#e74c3c" id="disp-wrong">0</span>
+            </div>
+        </div>	
+        <div class="stat-group">
+            <div class="stat-label">正確率 (Accuracy)</div>
+            <div class="stat-val" id="disp-accuracy">100<small>%</small></div>
+        </div>	
+        <div class="stat-group">
+            <div class="stat-label">速度 (Speed)</div>
+            <div class="stat-val" id="disp-speed">0 <small>字/分</small></div>
+        </div>		
+        <div class="stat-group">
+            <div class="stat-label">進度 (Progress)</div>
+            <div class="stat-val" id="disp-progress">0%</div>
+        </div>
+        <div class="stat-group">
+            <div class="stat-label">用時 (Time)</div>
+            <div class="stat-val" id="disp-time">00:00</div>
+        </div>
+    </div>
+
+    <!-- 🏆 成績與得分彈出視窗 (Modal) -->
+    <div id="scoreModalOverlay" class="modal-overlay">
+        <div class="score-modal">
+            <div class="modal-title">🏆 打字挑戰成績單</div>
+            <div class="modal-subtitle" id="modal-date">日期：-</div>
+            
+            <div class="score-badge-container">
+                <div class="score-label">您的最終得分</div>
+                <div class="score-value" id="modal-score">0.0 <span style="font-size: 24px">/ 5 分</span></div>
+                <div class="score-stars" id="modal-stars">⭐</div>
+                
+                <!-- 得分拆解明細 -->
+                <div class="score-breakdown">
+                    <div class="breakdown-item">
+                        <span>📈 字數進度得分 (佔 2.5)：</span>
+                        <strong id="modal-progress-score">0.0 / 2.5 分</strong>
+                    </div>
+                    <div class="breakdown-item">
+                        <span>⚡ 打字速度得分 (佔 2.5)：</span>
+                        <strong id="modal-speed-score">0.0 / 2.5 分</strong>
+                    </div>
+                </div>
+
+                <div class="feedback-text" id="modal-feedback" style="margin-top: 15px;">-</div>
+            </div>
+
+            <div class="modal-stats-grid">
+                <div class="modal-stat-card">
+                    <div class="modal-stat-label">挑戰者</div>
+                    <div class="modal-stat-value" id="modal-challenger-name">訪客</div>
+                </div>
+                <div class="modal-stat-card">
+                    <div class="modal-stat-label">打字速度</div>
+                    <div class="modal-stat-value" id="modal-speed">0 字/分</div>
+                </div>
+                <div class="modal-stat-card">
+                    <div class="modal-stat-label">正確率</div>
+                    <div class="modal-stat-value" id="modal-accuracy">100%</div>
+                </div>
+                <div class="modal-stat-card">
+                    <div class="modal-stat-label">正確 / 錯誤</div>
+                    <div class="modal-stat-value" id="modal-correct-wrong">0 / 0</div>
+                </div>
+                <div class="modal-stat-card" style="grid-column: span 2">
+                    <div class="modal-stat-label">所花時間</div>
+                    <div class="modal-stat-value" id="modal-time">00:00</div>
+                </div>
+            </div>
+
+            <div class="modal-btn-group">
+                <button class="modal-btn modal-btn-export" id="modal-btn-export">💾 匯出成績 (CSV)</button>
+                <button class="modal-btn modal-btn-reset" id="modal-btn-reset">🔄 重新挑戰</button>
+                <button class="modal-btn modal-btn-close" id="modal-btn-close">❌ 關閉</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ==========================================
+        //  🏆 可調得分參數設定 (Score Settings)
+        // ==========================================
+        // 這些參數控制「字數進度評分」與「打字速度評分」比例。
+        const SCORE_SETTINGS = {
+            // 打字速度對應分數設定 (佔最高 2.5 分)
+            speed_levels: [
+                { min: 30, score: 2.5 }, // 速度大於 30 (即 31 以上) -> 2.5 分
+                { min: 25, score: 2.0 }, // 速度大於 25 (即 26~30)  -> 2.0 分
+                { min: 20, score: 1.5 }, // 速度大於 20 (即 21~25)  -> 1.5 分
+                { min: 15, score: 1.0 }, // 速度大於 15 (即 16~20)  -> 1.0 分
+                { min: 0,  score: 0.5 }  // 其餘 (0~15)          -> 0.5 分
+            ],
+            // 字數進度最高評分 (佔最高 2.5 分)
+            max_progress_score: 2.5
+        };
+
+        const { pinyin } = pinyinPro;
+        
+        const board = document.getElementById('typing-board');
+        const hiddenInput = document.getElementById('hidden-input');
+        const fileInput = document.getElementById('fileInput');
+        const pinyinBox = document.getElementById('pinyin-box');
+        
+        const elProgress = document.getElementById('disp-progress');
+        const elAccuracy = document.getElementById('disp-accuracy');
+        const elSpeed = document.getElementById('disp-speed');
+        const elCorrect = document.getElementById('disp-correct');
+        const elWrong = document.getElementById('disp-wrong');
+        const elTime = document.getElementById('disp-time');
+
+        let originalText = "";
+        let currentIndex = 0;
+        let startTime = null;
+        let endTime = null; // 用於鎖定完成時間以獲取精準速度
+        let timerInterval = null;
+        let isRunning = false;
+        let isFinished = false;
+        
+        // 增加組字狀態標記 (完美相容輸入法)
+        let isComposing = false; 
+
+        // 1. 讀取檔案
+        fileInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                originalText = e.target.result.replace(/\r/g, '');
+                initGame();
+            };
+            reader.readAsText(file, 'UTF-8');
+            this.value = '';
+        });
+
+        // 2. 初始化
+        function initGame() {
+            clearInterval(timerInterval);
+            startTime = null;
+            endTime = null;
+            isRunning = false;
+            isFinished = false;
+            currentIndex = 0;
+            isComposing = false;
+            hiddenInput.value = "";
+            elTime.textContent = "00:00";
+            
+            board.innerHTML = "";
+            if (!originalText) {
+                board.innerHTML = '<span style="color:#aaa;">請先載入檔案...</span>';
+                updateStatsUI(0,0);
+                return;
+            }
+
+            const frag = document.createDocumentFragment();
+            for (let i = 0; i < originalText.length; i++) {
+                const char = originalText[i];
+                const span = document.createElement('span');
+                span.textContent = char;
+                span.className = 'char';
+                span.dataset.index = i;
+                if (i === 0) span.classList.add('current');
+                frag.appendChild(span);
+            }
+            board.appendChild(frag);
+            updateStatsUI(0, 0);
+            focusInput();
+        }
+        
+        document.getElementById('btn-reset').addEventListener('click', initGame);
+
+        // 3. 焦點控制
+        function focusInput() {
+            if (originalText) hiddenInput.focus();
+        }
+        board.addEventListener('click', (e) => {
+            if (!originalText) return;
+            if (window.getSelection().toString().length > 0) return;
+            if (e.target.classList.contains('char')) {
+                const idx = parseInt(e.target.dataset.index);
+                if (!isNaN(idx)) setCursor(idx);
+            }
+            focusInput();
+        });
+
+        function setCursor(index) {
+            const spans = board.querySelectorAll('.char');
+            if (index < 0) index = 0;
+            if (index >= spans.length) index = spans.length - 1;
+
+            const old = board.querySelector('.char.current');
+            if (old) old.classList.remove('current');
+
+            currentIndex = index;
+            const currentSpan = spans[currentIndex];
+            currentSpan.classList.add('current');
+            ensureVisible(currentSpan);
+        }
+
+        function ensureVisible(el) {
+            const rect = el.getBoundingClientRect();
+            const containerRect = board.getBoundingClientRect();
+            if (rect.bottom > containerRect.bottom - 40) board.scrollTop += 60;
+            else if (rect.top < containerRect.top + 40) board.scrollTop -= 60;
+        }
+
+        // 4. 監聽「輸入法組字」事件
+        hiddenInput.addEventListener('compositionstart', () => {
+            isComposing = true;
+        });
+
+        hiddenInput.addEventListener('compositionend', (e) => {
+            isComposing = false;
+            if (e.data) {
+                handleInputString(e.data);
+            }
+            hiddenInput.value = "";
+        });
+
+        hiddenInput.addEventListener('input', (e) => {
+            if (!originalText) {
+                hiddenInput.value = "";
+                return;
+            }
+            
+            if (isComposing) {
+                return;
+            }
+
+            if (!isRunning && !isFinished) {
+                isRunning = true;
+                startTime = new Date();
+                timerInterval = setInterval(timerTick, 1000);
+            }
+
+            if (e.inputType !== 'deleteContentBackward' && e.data) {
+                handleInputString(e.data);
+            }
+            
+            hiddenInput.value = "";
+        });
+
+        function handleInputString(str) {
+            if (!isRunning && !isFinished) {
+                isRunning = true;
+                startTime = new Date();
+                timerInterval = setInterval(timerTick, 1000);
+            }
+
+            for (const char of str) {
+                processChar(char);
+            }
+        }
+
+        // 導航與刪除
+        hiddenInput.addEventListener('keydown', (e) => {
+            if (!originalText) return;
+            if (e.key === 'ArrowLeft') { e.preventDefault(); setCursor(currentIndex - 1); } 
+            else if (e.key === 'ArrowRight') { e.preventDefault(); setCursor(currentIndex + 1); } 
+            else if (e.key === 'Backspace') {
+                if (currentIndex > 0) {
+                    const targetIdx = currentIndex - 1;
+                    setCursor(targetIdx);
+                    const span = board.querySelectorAll('.char')[targetIdx];
+                    span.classList.remove('correct', 'wrong');
+                    calcStats();
+                }
+            }
+        });
+
+        // 單字處理邏輯
+        function processChar(inputChar) {
+            const spans = board.querySelectorAll('.char');
+            if (currentIndex >= spans.length) return;
+
+            const span = spans[currentIndex];
+            const targetChar = originalText[currentIndex];
+
+            // 處理換行
+            if (targetChar === '\n') {
+                span.classList.remove('wrong');
+                span.classList.add('correct');
+                calcStats(); // 先更新數據
+                setCursor(currentIndex + 1);
+                return; 
+            }
+
+            if (inputChar === targetChar) {
+                span.classList.remove('wrong');
+                span.classList.add('correct');
+            } else {
+                span.classList.remove('correct');
+                span.classList.add('wrong');
+            }
+
+            // 🎯 【關鍵修復】先執行計算，確保最後一個字被百分百統計，再作後續跳轉或完成偵測
+            calcStats();
+
+            // 自動跳轉或結束偵測
+            if (currentIndex < spans.length - 1) {
+                setCursor(currentIndex + 1);
+            } else {
+                checkFinish();
+            }
+        }
+
+        // 5. 統計與計時
+        function calcStats() {
+            const correctCount = board.querySelectorAll('.char.correct').length;
+            const wrongCount = board.querySelectorAll('.char.wrong').length;
+            updateStatsUI(correctCount, wrongCount);
+        }
+
+        function updateStatsUI(correct, wrong) {
+            elCorrect.textContent = correct;
+            elWrong.textContent = wrong;
+            const totalTyped = correct + wrong;
+            const acc = totalTyped === 0 ? 100 : Math.round((correct / totalTyped) * 100);
+            elAccuracy.innerHTML = `${acc}<small>%</small>`;
+            const progress = !originalText ? 0 : Math.round((totalTyped / originalText.length) * 100);
+            elProgress.textContent = `${progress}%`;
+            
+            if (startTime) {
+                const now = isFinished && endTime ? endTime : new Date();
+                const diffMin = (now - startTime) / 60000;
+                if (diffMin > 0) {
+                    const speed = Math.round(correct / diffMin);
+                    elSpeed.innerHTML = `${speed} <small>字/分</small>`;
+                }
+            }
+        }
+
+        function timerTick() {
+            if (!startTime) return;
+            const now = new Date();
+            const diffSec = Math.floor((now - startTime) / 1000);
+            const m = String(Math.floor(diffSec / 60)).padStart(2, '0');
+            const s = String(diffSec % 60).padStart(2, '0');
+            elTime.textContent = `${m}:${s}`;
+            calcStats();
+        }
+
+        function checkFinish() {
+            const spans = board.querySelectorAll('.char');
+            if (spans.length === 0) return;
+            const lastSpan = spans[spans.length - 1];
+            if ((lastSpan.classList.contains('correct') || lastSpan.classList.contains('wrong')) && !isFinished) {
+                isFinished = true;
+                endTime = new Date();
+                clearInterval(timerInterval);
+                hiddenInput.blur();
+                showScoreModal(); // 自動開啟計分板
+            }
+        }
+
+        // 6. 得分計算邏輯 (拆分為字數進度評分與速度評分)
+        function calculateScores(speed, correct, totalLength) {
+            // 1. 計算字數進度分數 (以正確字數比例計算，最高 2.5 分)
+            let progressScore = 0;
+            if (totalLength > 0) {
+                progressScore = (correct / totalLength) * SCORE_SETTINGS.max_progress_score;
+            }
+            progressScore = Math.min(SCORE_SETTINGS.max_progress_score, parseFloat(progressScore.toFixed(2)));
+
+            // 2. 計算速度分數 (最高 2.5 分)
+            let speedScore = 0.5; // 預設 0.5 分
+            for (const level of SCORE_SETTINGS.speed_levels) {
+                if (speed > level.min) {
+                    speedScore = level.score;
+                    break;
+                }
+            }
+
+            // 3. 總得分
+            const totalScore = parseFloat((progressScore + speedScore).toFixed(2));
+
+            return {
+                progressScore,
+                speedScore,
+                totalScore
+            };
+        }
+
+        // 7. 彈出計分視窗 (Modal)
+        function showScoreModal() {
+            if (!originalText) {
+                return;
+            }
+            
+            // 如果是在中途點擊「完成計分」，且尚未完成，則記錄當下的完成狀態並停止計時
+            if (!isFinished) {
+                isFinished = true;
+                endTime = new Date();
+                clearInterval(timerInterval);
+                isRunning = false;
+                calcStats(); // 確保中途結算數據最新
+            }
+
+            const name = document.getElementById('challenger').value.trim() || "訪客";
+            const dateStr = new Date().toLocaleString('zh-TW', { hour12: false });
+            
+            const correct = parseInt(elCorrect.textContent) || 0;
+            const wrong = parseInt(elWrong.textContent) || 0;
+            const accText = elAccuracy.textContent;
+            const timeText = elTime.textContent;
+            
+            // 精準計算打字速度 (WPM)
+            let speed = 0;
+            if (startTime) {
+                const end = endTime || new Date();
+                const diffMin = (end - startTime) / 60000;
+                if (diffMin > 0) {
+                    speed = Math.round(correct / diffMin);
+                }
+            }
+
+            // 計算拆分得分
+            const scores = calculateScores(speed, correct, originalText.length);
+
+            // 更新彈出視窗資訊
+            document.getElementById('modal-date').textContent = `測試時間：${dateStr}`;
+            document.getElementById('modal-challenger-name').textContent = name;
+            document.getElementById('modal-speed').textContent = `${speed} 字/分`;
+            document.getElementById('modal-accuracy').textContent = accText;
+            document.getElementById('modal-correct-wrong').textContent = `${correct} / ${wrong}`;
+            document.getElementById('modal-time').textContent = timeText;
+
+            // 更新拆分得分顯示
+            document.getElementById('modal-progress-score').textContent = `${scores.progressScore.toFixed(2)} / 2.5 分`;
+            document.getElementById('modal-speed-score').textContent = `${scores.speedScore.toFixed(1)} / 2.5 分`;
+
+            // 總分顯示
+            const elScore = document.getElementById('modal-score');
+            const elStars = document.getElementById('modal-stars');
+            const elFeedback = document.getElementById('modal-feedback');
+
+            elScore.innerHTML = `${scores.totalScore.toFixed(2)} <span style="font-size: 24px">/ 5 分</span>`;
+
+            // 動態星星級等 (依據總分 5 分來分配)
+            let stars = "";
+            let feedback = "";
+
+            if (scores.totalScore >= 4.5) {
+                stars = "⭐⭐⭐⭐⭐";
+                feedback = "👑 卓越超群！打字速度快如閃電，進度與正確率完美無缺！";
+            } else if (scores.totalScore >= 3.5) {
+                stars = "⭐⭐⭐⭐";
+                feedback = "🌟 駕輕就熟！進度與打字速度兼備，實力非常深厚！";
+            } else if (scores.totalScore >= 2.5) {
+                stars = "⭐⭐⭐";
+                feedback = "👍 漸入佳境！進度與速度達到標準，再多加練習會更棒！";
+            } else if (scores.totalScore >= 1.5) {
+                stars = "⭐⭐";
+                feedback = "🌱 穩紮穩打！完成了部分篇幅，掌握基本手感，多練習必能進步！";
+            } else {
+                stars = "⭐";
+                feedback = "🎯 基礎練習中！調整打字姿勢並持續挑戰，持之以恆會越來越好！";
+            }
+
+            elStars.textContent = stars;
+            elFeedback.textContent = feedback;
+
+            // 啟用動畫顯示視窗
+            document.getElementById('scoreModalOverlay').classList.add('active');
+        }
+
+        // 彈出視窗按鈕綁定
+        document.getElementById('btn-export').addEventListener('click', showScoreModal);
+
+        document.getElementById('modal-btn-close').addEventListener('click', () => {
+            document.getElementById('scoreModalOverlay').classList.remove('active');
+            focusInput();
+        });
+
+        document.getElementById('modal-btn-reset').addEventListener('click', () => {
+            document.getElementById('scoreModalOverlay').classList.remove('active');
+            initGame();
+        });
+
+        // 8. 匯出 CSV 邏輯 (整合拆分得分)
+        function exportCSV() {
+            const name = document.getElementById('challenger').value.trim() || "訪客";
+            const date = new Date().toLocaleString('zh-TW', { hour12: false });
+            const correct = elCorrect.textContent;
+            const wrong = elWrong.textContent;
+            const acc = elAccuracy.textContent.replace('%','');
+            
+            let speed = 0;
+            if (startTime) {
+                const end = endTime || new Date();
+                const diffMin = (end - startTime) / 60000;
+                if (diffMin > 0) {
+                    speed = Math.round(parseInt(correct) / diffMin);
+                }
+            }
+            
+            // 重新計算得分
+            const scores = calculateScores(speed, parseInt(correct), originalText.length);
+            const time = elTime.textContent;
+            
+            // 欄位新增「進度得分」、「速度得分」、「總得分」
+            let csv = "\uFEFF挑戰者,日期,正確字數,錯誤字數,正確率(%),速度(字/分),進度得分(2.5),速度得分(2.5),總得分(5.0),用時\n";
+            csv += `"${name}","${date}",${correct},${wrong},${acc},${speed},${scores.progressScore},${scores.speedScore},${scores.totalScore},"${time}"\n`;
+            
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(blob);
+            link.download = `打字成績_${name}_${scores.totalScore.toFixed(2)}分.csv`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        document.getElementById('modal-btn-export').addEventListener('click', exportCSV);
+
+        // 9. 拼音顯示
+        document.addEventListener('mouseup', handleSelection);
+        document.addEventListener('keyup', (e) => {
+            if (e.key === 'Shift' || e.key.startsWith('Arrow')) handleSelection();
+        });
+
+        function handleSelection() {
+            const sel = window.getSelection();
+            const text = sel.toString().trim();
+            if (text && board.contains(sel.anchorNode)) {
+                const range = sel.getRangeAt(0);
+                showPinyin(text, range.getBoundingClientRect());
+            } else {
+                pinyinBox.style.display = 'none';
+            }
+        }
+        
+        board.addEventListener('click', (e) => {
+            if (e.target.classList.contains('char') && window.getSelection().toString().length === 0) {
+                showPinyin(e.target.textContent, e.target.getBoundingClientRect());
+            }
+        });
+
+        function showPinyin(text, rect) {
+            try {
+                const py = pinyin(text);
+                pinyinBox.textContent = py;
+                pinyinBox.style.display = 'block';
+                const boxRect = pinyinBox.getBoundingClientRect();
+                const top = rect.top - boxRect.height - 8;
+                let left = rect.left + (rect.width / 2) - (boxRect.width / 2);
+                if (left < 10) left = 10;
+                pinyinBox.style.top = `${top}px`;
+                pinyinBox.style.left = `${left}px`;
+            } catch (err) {}
+        }
+    </script>
+</body>
+</html>
