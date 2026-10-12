@@ -1,0 +1,1154 @@
+<!DOCTYPE html>
+<html lang="zh-tw">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>學習時間與成績關係回歸模型</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#165DFF',
+                        secondary: '#36CFC9',
+                        accent: '#FF7D00',
+                        neutral: '#F5F7FA',
+                        dark: '#1D2129'
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    
+    <style type="text/tailwindcss">
+        @layer utilities {
+            .content-auto {
+                content-visibility: auto;
+            }
+            .step-active {
+                @apply border-primary bg-primary/10 text-primary;
+            }
+            .cell-editable {
+                @apply transition-all hover:bg-primary/5 focus:bg-primary/10 focus:outline-none focus:ring-2 focus:ring-primary/30;
+            }
+            .card-shadow {
+                @apply shadow-md hover:shadow-lg transition-shadow duration-300;
+            }
+            .model-active {
+                @apply bg-primary text-white;
+            }
+            .file-input-hidden {
+                @apply absolute w-0 h-0 overflow-hidden opacity-0;
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 text-dark">
+    <!-- 頂部導航 -->
+    <header class="bg-white shadow-sm sticky top-0 z-50">
+        <div class="container mx-auto px-4 py-4 flex justify-between items-center">
+            <h1 class="text-2xl font-bold text-primary flex items-center">
+                <i class="fa fa-line-chart mr-2"></i>學習時間與成績關係分析
+            </h1>
+            <div class="text-sm text-gray-500">
+                <span>探索學習時長如何影響成績表現</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- 主內容區 -->
+    <main class="container mx-auto px-4 py-8">
+        <!-- 實驗介紹 -->
+        <div class="bg-white rounded-lg p-6 mb-8 card-shadow">
+            <h2 class="text-xl font-semibold mb-4 flex items-center">
+                <i class="fa fa-info-circle text-primary mr-2"></i>實驗目標
+            </h2>
+            <p class="text-gray-700 mb-4">
+                本實驗通過分析學習時間（分鐘）與成績（分）之間的關係，幫助你理解不同回歸模型如何擬合實際數據。
+                你可以導入自己的學習數據，或導出分析數據進行進一步研究。
+            </p>
+            <div class="flex flex-wrap gap-4 mt-6">
+                <div class="flex-1 min-w-[280px] bg-neutral rounded p-4">
+                    <div class="font-medium text-primary mb-2">變量說明</div>
+                    <ul class="list-disc list-inside text-sm text-gray-600 space-y-1">
+                        <li>X值：學習時間（分鐘），範圍0-120分鐘</li>
+                        <li>Y值：成績（分），範圍0-100分</li>
+                        <li>支持導入導出CSV格式數據，方便數據管理</li>
+                    </ul>
+                </div>
+                <div class="flex-1 min-w-[280px] bg-neutral rounded p-4">
+                    <div class="font-medium text-primary mb-2">學習收穫</div>
+                    <ul class="list-disc list-inside text-sm text-gray-600 space-y-1">
+                        <li>理解學習時間與成績的關係模式</li>
+                        <li>掌握不同回歸模型的適用場景</li>
+                        <li>學會數據的導入導出與管理方法</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- 數據控制區 -->
+        <div class="bg-white rounded-lg p-6 mb-8 card-shadow flex flex-wrap justify-between items-center gap-4">
+            <div class="flex flex-wrap items-center gap-4">
+                <!-- 數據數量輸入框 -->
+                <div class="mr-0">
+                    <label for="data-count" class="block text-sm text-gray-700 mb-1">數據點數量：</label>
+                    <input type="number" id="data-count" min="5" max="50" value="30" 
+                           class="w-24 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50">
+                    <span class="text-xs text-gray-500 ml-1">（5-50之間）</span>
+                </div>
+                
+                <button id="random-data-btn" class="bg-accent hover:bg-accent/90 text-white px-6 py-2 rounded-lg transition-colors duration-300 flex items-center">
+                    <i class="fa fa-random mr-2"></i> 生成隨機數據
+                </button>
+                
+                <!-- 導入數據按鈕 -->
+                <label for="import-data" class="bg-secondary hover:bg-secondary/90 text-white px-6 py-2 rounded-lg transition-colors duration-300 flex items-center cursor-pointer">
+                    <i class="fa fa-upload mr-2"></i> 導入CSV數據
+                    <input type="file" id="import-data" accept=".csv" class="file-input-hidden">
+                </label>
+                
+                <!-- 導出數據按鈕 -->
+                <button id="export-data" class="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg transition-colors duration-300 flex items-center">
+                    <i class="fa fa-download mr-2"></i> 導出CSV數據
+                </button>
+                
+                <span class="text-gray-500 text-sm">（CSV格式：學習時間,成績）</span>
+            </div>
+            
+            <div class="flex items-center gap-2">
+                <span class="text-gray-700">選擇模型：</span>
+                <button id="model-linear" class="model-active px-4 py-2 rounded-lg transition-colors duration-300">綫性回歸</button>
+                <button id="model-quadratic" class="bg-gray-100 hover:bg-gray-200 px-4 py-2 rounded-lg transition-colors duration-300">二次回歸</button>
+                <button id="model-exponential" class="bg-gray-100 hover:bg-gray-200 px-4 py-2 rounded-lg transition-colors duration-300">指數回歸</button>
+            </div>
+        </div>
+
+        <!-- 步驟導航 -->
+        <div class="flex flex-wrap justify-between mb-8 gap-4">
+            <div id="step-indicator-1" class="step-active flex-1 min-w-[150px] text-center py-3 border rounded-lg cursor-pointer transition-all duration-300">
+                <span class="block font-medium">步驟1</span>
+                <span class="text-sm">數據準備</span>
+            </div>
+            <div id="step-indicator-2" class="border border-gray-200 text-gray-500 flex-1 min-w-[150px] text-center py-3 rounded-lg cursor-pointer transition-all duration-300 hover:border-primary/50 hover:text-primary/80">
+                <span class="block font-medium">步驟2</span>
+                <span class="text-sm">數據可視化</span>
+            </div>
+            <div id="step-indicator-3" class="border border-gray-200 text-gray-500 flex-1 min-w-[150px] text-center py-3 rounded-lg cursor-pointer transition-all duration-300 hover:border-primary/50 hover:text-primary/80">
+                <span class="block font-medium">步驟3</span>
+                <span class="text-sm">模型擬合</span>
+            </div>
+            <div id="step-indicator-4" class="border border-gray-200 text-gray-500 flex-1 min-w-[150px] text-center py-3 rounded-lg cursor-pointer transition-all duration-300 hover:border-primary/50 hover:text-primary/80">
+                <span class="block font-medium">步驟4</span>
+                <span class="text-sm">預測分析</span>
+            </div>
+        </div>
+
+        <!-- 步驟內容區 -->
+        <div class="space-y-8">
+            <!-- 步驟1：數據準備 -->
+            <div id="step-1" class="bg-white rounded-lg p-6 card-shadow">
+                <h2 class="text-xl font-semibold mb-4 flex items-center">
+                    <span class="bg-primary text-white rounded-full w-8 h-8 flex items-center justify-center mr-2 text-sm">1</span>
+                    數據準備：學習時間與成績數據
+                </h2>
+                <p class="text-gray-700 mb-6">
+                    下方表格展示了學習時間（分鐘）與對應成績（分）的數據。X值範圍限制在0-120，Y值範圍限制在0-100。
+                    你可以點擊單元格修改數據，或使用上方按鈕生成、導入數據。
+                </p>
+
+                <!-- 數據表格 -->
+                <div class="overflow-x-auto mb-6">
+                    <table class="min-w-full border-collapse" id="data-table">
+                        <thead>
+                            <tr class="bg-gray-50 border-b">
+                                <th class="py-3 px-4 text-left font-medium border">數據點編號</th>
+                                <th class="py-3 px-4 text-left font-medium border">學習時間（分鐘）</th>
+                                <th class="py-3 px-4 text-left font-medium border">成績（分）</th>
+                            </tr>
+                        </thead>
+                        <tbody id="data-table-body">
+                            <!-- 表格內容將通過JavaScript動態生成 -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- 數據導入提示 -->
+                <div class="bg-blue-50 border-l-4 border-primary p-4 mb-6">
+                    <h3 class="font-medium text-primary flex items-center">
+                        <i class="fa fa-lightbulb-o mr-2"></i> CSV數據格式說明
+                    </h3>
+                    <p class="text-sm text-gray-700 mt-1">
+                        導入的CSV文件應包含兩列數據（無表頭或包含表頭"學習時間,成績"均可），例如：
+                        <br>20,50
+                        <br>30,58
+                        <br>40,65
+                        <br>...
+                        學習時間範圍0-120，成績範圍0-100
+                    </p>
+                </div>
+
+                <!-- 互動任務 -->
+                <div class="bg-neutral rounded-lg p-4 mb-6">
+                    <h3 class="font-medium mb-2 text-primary">互動任務</h3>
+                    <ol class="list-decimal list-inside text-gray-700 space-y-2 ml-2">
+                        <li>導入自己的學習時間與成績數據，分析兩者關係</li>
+                        <li>嘗試生成多組隨機數據幷導出保存，比較不同數據模式</li>
+                        <li>手動修改數據後導出，記錄不同數據對模型的影響</li>
+                    </ol>
+                </div>
+
+                <div class="flex justify-end">
+                    <button id="to-step-2" class="bg-primary hover:bg-primary/90 text-white px-6 py-2 rounded-lg transition-colors duration-300 flex items-center">
+                        繼續到下一步 <i class="fa fa-arrow-right ml-2"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- 步驟2：數據可視化 -->
+            <div id="step-2" class="bg-white rounded-lg p-6 card-shadow hidden">
+                <h2 class="text-xl font-semibold mb-4 flex items-center">
+                    <span class="bg-primary text-white rounded-full w-8 h-8 flex items-center justify-center mr-2 text-sm">2</span>
+                    數據可視化：學習時間與成績散點圖
+                </h2>
+                <p class="text-gray-700 mb-6">
+                    數據準備完成後，我們通過散點圖直觀展示學習時間與成績的關係，觀察兩者是否存在相關性以及相關模式。
+                </p>
+
+                <!-- 散點圖容器 -->
+                <div class="mb-8">
+                    <div class="h-[400px] w-full">
+                        <canvas id="scatter-chart"></canvas>
+                    </div>
+                </div>
+
+                <!-- 互動任務 -->
+                <div class="bg-neutral rounded-lg p-4 mb-6">
+                    <h3 class="font-medium mb-2 text-primary">互動任務</h3>
+                    <ol class="list-decimal list-inside text-gray-700 space-y-2 ml-2">
+                        <li>觀察散點分布，學習時間與成績是正相關還是負相關？關係是綫性的嗎？</li>
+                        <li>嘗試導入不同的數據，比較散點圖的差异，這些差异說明了什麽？</li>
+                    </ol>
+                </div>
+
+                <div class="flex justify-between">
+                    <button id="back-to-step-1" class="border border-primary text-primary hover:bg-primary/5 px-6 py-2 rounded-lg transition-colors duration-300 flex items-center">
+                        <i class="fa fa-arrow-left mr-2"></i> 返回上一步
+                    </button>
+                    <button id="to-step-3" class="bg-primary hover:bg-primary/90 text-white px-6 py-2 rounded-lg transition-colors duration-300 flex items-center">
+                        繼續到下一步 <i class="fa fa-arrow-right ml-2"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- 步驟3：模型擬合 -->
+            <div id="step-3" class="bg-white rounded-lg p-6 card-shadow hidden">
+                <h2 class="text-xl font-semibold mb-4 flex items-center">
+                    <span class="bg-primary text-white rounded-full w-8 h-8 flex items-center justify-center mr-2 text-sm">3</span>
+                    模型擬合：學習時間與成績關係模型
+                </h2>
+                <p class="text-gray-700 mb-6">
+                    選擇不同的回歸模型對學習時間與成績數據進行擬合，觀察哪種模型更能準確反映兩者關係。
+                </p>
+
+                <!-- 帶趨勢綫的散點圖 -->
+                <div class="mb-8">
+                    <div class="h-[400px] w-full">
+                        <canvas id="model-chart"></canvas>
+                    </div>
+                </div>
+
+                <!-- 回歸公式展示 -->
+                <div class="bg-neutral rounded-lg p-6 mb-8">
+                    <h3 class="font-medium mb-4 text-primary text-center text-lg">回歸模型公式</h3>
+                    <div id="regression-formula" class="text-center text-2xl font-semibold text-accent mb-4">成績 = 0.5×學習時間 + 30</div>
+                    <div id="model-parameters" class="grid md:grid-cols-3 gap-4 text-gray-700">
+                        <div class="bg-white p-4 rounded shadow-sm">
+                            <p><span class="font-medium">參數a：</span><span id="param-a">0.5</span></p>
+                            <p class="text-sm mt-2">含義：學習時間的係數</p>
+                        </div>
+                        <div class="bg-white p-4 rounded shadow-sm">
+                            <p><span class="font-medium">參數b：</span><span id="param-b">30</span></p>
+                            <p class="text-sm mt-2">含義：基礎成績（學習時間爲0時）</p>
+                        </div>
+                        <div class="bg-white p-4 rounded shadow-sm hidden" id="param-c-container">
+                            <p><span class="font-medium">參數c：</span><span id="param-c">-0.002</span></p>
+                            <p class="text-sm mt-2">含義：學習時間平方項的係數</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 模型說明 -->
+                <div class="mb-6">
+                    <h3 class="font-medium mb-3 text-primary">模型特點說明</h3>
+                    <div class="grid md:grid-cols-3 gap-4">
+                        <div class="bg-white p-4 rounded shadow-sm">
+                            <h4 class="font-medium text-primary mb-2">綫性回歸</h4>
+                            <p class="text-sm text-gray-700">成績 = a×學習時間 + b</p>
+                            <p class="text-xs text-gray-500 mt-2">假設學習時間與成績呈直綫關係，每多學1分鐘成績提升固定值</p>
+                        </div>
+                        <div class="bg-white p-4 rounded shadow-sm">
+                            <h4 class="font-medium text-primary mb-2">二次回歸</h4>
+                            <p class="text-sm text-gray-700">成績 = a×學習時間² + b×學習時間 + c</p>
+                            <p class="text-xs text-gray-500 mt-2">適合學習時間與成績呈曲綫關係，如"邊際效益遞减"現象</p>
+                        </div>
+                        <div class="bg-white p-4 rounded shadow-sm">
+                            <h4 class="font-medium text-primary mb-2">指數回歸</h4>
+                            <p class="text-sm text-gray-700">成績 = ae^(b×學習時間) + c</p>
+                            <p class="text-xs text-gray-500 mt-2">適合初期進步快，後期逐漸趨于穩定的學習效果</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 互動任務 -->
+                <div class="bg-neutral rounded-lg p-4 mb-6">
+                    <h3 class="font-medium mb-2 text-primary">互動任務</h3>
+                    <ol class="list-decimal list-inside text-gray-700 space-y-2 ml-2">
+                        <li>嘗試切換不同的模型，哪種模型更符合你對"學習時間與成績關係"的認知？</li>
+                        <li>導入不同類型的數據（如綫性分布、曲綫分布），觀察模型擬合效果的變化</li>
+                    </ol>
+                </div>
+
+                <div class="flex justify-between">
+                    <button id="back-to-step-2" class="border border-primary text-primary hover:bg-primary/5 px-6 py-2 rounded-lg transition-colors duration-300 flex items-center">
+                        <i class="fa fa-arrow-left mr-2"></i> 返回上一步
+                    </button>
+                    <button id="to-step-4" class="bg-primary hover:bg-primary/90 text-white px-6 py-2 rounded-lg transition-colors duration-300 flex items-center">
+                        繼續到下一步 <i class="fa fa-arrow-right ml-2"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- 步驟4：預測分析 -->
+            <div id="step-4" class="bg-white rounded-lg p-6 card-shadow hidden">
+                <h2 class="text-xl font-semibold mb-4 flex items-center">
+                    <span class="bg-primary text-white rounded-full w-8 h-8 flex items-center justify-center mr-2 text-sm">4</span>
+                    預測分析：學習時間與成績預測
+                </h2>
+                <p class="text-gray-700 mb-6">
+                    使用擬合好的模型預測不同學習時間對應的成績，幫助制定合理的學習計劃。
+                </p>
+
+                <!-- 預測工具 -->
+                <div class="bg-neutral rounded-lg p-6 mb-8">
+                    <h3 class="font-medium mb-4 text-primary">學習成績預測工具</h3>
+                    <div class="flex flex-wrap gap-4 items-end">
+                        <div class="flex-1 min-w-[200px]">
+                            <label class="block text-sm font-medium text-gray-700 mb-1">輸入學習時間（分鐘，0-120）</label>
+                            <input type="number" step="1" min="0" max="120" value="60" id="prediction-x" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50">
+                        </div>
+                        <div>
+                            <button id="calculate-prediction" class="bg-accent hover:bg-accent/90 text-white px-6 py-2 rounded-lg transition-colors duration-300">
+                                預測成績
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="mt-6 grid md:grid-cols-3 gap-4">
+                        <div class="bg-white p-4 rounded shadow-sm text-center">
+                            <p class="text-sm text-gray-500">預測成績（分）</p>
+                            <p id="predicted-y" class="text-2xl font-semibold text-primary">60</p>
+                        </div>
+                        <div class="bg-white p-4 rounded shadow-sm text-center">
+                            <p class="text-sm text-gray-500">實際成績（可輸入，0-100）</p>
+                            <input type="number" step="0.1" min="0" max="100" value="62" id="actual-y" class="w-full text-center text-2xl font-semibold text-gray-700 border-b border-gray-200 focus:outline-none focus:border-primary">
+                        </div>
+                        <div class="bg-white p-4 rounded shadow-sm text-center">
+                            <p class="text-sm text-gray-500">預測誤差（分）</p>
+                            <p id="prediction-error" class="text-2xl font-semibold text-accent">2.0</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 模型評估 -->
+                <div class="mb-8">
+                    <h3 class="font-medium mb-3 text-primary">模型評估指標：R²值</h3>
+                    <p class="text-gray-700 mb-4">
+                        R²值（决定係數）用于衡量學習時間對成績的解釋程度，範圍在0到1之間：
+                    </p>
+                    <div class="bg-neutral p-3 rounded text-center font-medium mb-4 flex items-center justify-center">
+                        <span>當前模型R²值：</span>
+                        <span id="r-squared" class="ml-2 text-xl text-primary font-bold">0.89</span>
+                        <span class="ml-2">（越接近1，說明學習時間對成績的解釋力越强）</span>
+                    </div>
+                </div>
+
+                <!-- 互動任務 -->
+                <div class="bg-neutral rounded-lg p-4 mb-6">
+                    <h3 class="font-medium mb-2 text-primary">互動任務</h3>
+                    <ol class="list-decimal list-inside text-gray-700 space-y-2 ml-2">
+                        <li>基于導入的個人數據，預測不同學習時間對應的成績</li>
+                        <li>導出預測結果與實際數據進行對比分析</li>
+                        <li>根據模型預測，制定適合自己的學習計劃</li>
+                    </ol>
+                </div>
+
+                <div class="flex justify-between">
+                    <button id="back-to-step-3" class="border border-primary text-primary hover:bg-primary/5 px-6 py-2 rounded-lg transition-colors duration-300 flex items-center">
+                        <i class="fa fa-arrow-left mr-2"></i> 返回上一步
+                    </button>
+                    <button id="restart-experiment" class="bg-secondary hover:bg-secondary/90 text-white px-6 py-2 rounded-lg transition-colors duration-300 flex items-center">
+                        <i class="fa fa-refresh mr-2"></i> 重新開始實驗
+                    </button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- 頁脚 -->
+    <footer class="bg-white border-t mt-12 py-6">
+        <div class="container mx-auto px-4 text-center text-gray-500 text-sm">
+            <p>學習時間與成績關係分析 &copy; 2023 | 支持數據導入導出功能</p>
+        </div>
+    </footer>
+
+    <script>
+        // 存儲數據和當前模型
+        let data = {
+            x: [20, 30, 40, 10, 50, 25, 35, 45, 5, 55],
+            y: [50, 58, 65, 42, 73, 55, 62, 70, 38, 78]
+        };
+        let currentModel = 'linear'; // 可選值: linear, quadratic, exponential
+        let modelParameters = {a: 0.8, b: 34, c: 0};
+
+        // 生成隨機數據 - 學習時間(0-120)與成績(0-100)
+        function generateRandomData() {
+            // 獲取用戶輸入的數據數量，限制在5-50之間
+            const countInput = document.getElementById('data-count');
+            let count = parseInt(countInput.value);
+            count = Math.max(5, Math.min(50, isNaN(count) ? 10 : count));
+            countInput.value = count; // 確保輸入框顯示有效值
+            
+            // 隨機决定數據分布類型 - 更符合學習與成績的關係
+            const distributionType = Math.random();
+            
+            const x = [];
+            const y = [];
+            
+            // 生成指定數量的x值（0-120分鐘之間）
+            for (let i = 0; i < count; i++) {
+                x.push(parseFloat((Math.random() * 120).toFixed(0)));
+            }
+            x.sort((a, b) => a - b); // 排序x值
+            
+            // 根據不同分布類型生成y值（0-100分之間）
+            if (distributionType < 0.3) {
+                // 綫性分布 - 學習時間與成績呈綫性正相關
+                const a = 0.3 + Math.random() * 0.5; // 0.3-0.8之間的斜率
+                const b = 20 + Math.random() * 20; // 20-40之間的基礎成績
+                
+                x.forEach(xVal => {
+                    // 添加一些隨機噪聲
+                    const noise = (Math.random() - 0.5) * 10;
+                    let val = a * xVal + b + noise;
+                    // 確保成績在0-100之間
+                    val = Math.max(0, Math.min(100, val));
+                    y.push(parseFloat(val.toFixed(1)));
+                });
+            } else if (distributionType < 0.7) {
+                // 二次分布 - 邊際效益遞减（學習時間增加，成績提升放緩）
+                const a = -0.005 + Math.random() * 0.003; // -0.005到-0.002之間
+                const b = 0.8 + Math.random() * 0.4; // 0.8-1.2之間
+                const c = 10 + Math.random() * 20; // 10-30之間
+                
+                x.forEach(xVal => {
+                    const noise = (Math.random() - 0.5) * 10;
+                    let val = a * xVal * xVal + b * xVal + c + noise;
+                    val = Math.max(0, Math.min(100, val));
+                    y.push(parseFloat(val.toFixed(1)));
+                });
+            } else {
+                // 指數分布 - 初期提升快，後期趨于穩定
+                const a = 30 + Math.random() * 30; // 30-60之間
+                const b = 0.01 + Math.random() * 0.02; // 0.01-0.03之間
+                const c = 20 + Math.random() * 10; // 20-30之間
+                
+                x.forEach(xVal => {
+                    const noise = (Math.random() - 0.5) * 10;
+                    let val = 100 - (a * Math.exp(-b * xVal) + c) + noise;
+                    val = Math.max(0, Math.min(100, val));
+                    y.push(parseFloat(val.toFixed(1)));
+                });
+            }
+            
+            data = {x, y};
+            updateDataTable(); // 更新數據表格
+            updateCharts();
+        }
+
+        // 更新數據表格
+        function updateDataTable() {
+            const tableBody = document.getElementById('data-table-body');
+            tableBody.innerHTML = ''; // 清空表格
+            
+            // 生成新的表格行
+            data.x.forEach((xVal, index) => {
+                const row = document.createElement('tr');
+                row.className = 'hover:bg-gray-50';
+                
+                row.innerHTML = `
+                    <td class="py-3 px-4 border">${index + 1}</td>
+                    <td class="py-3 px-4 border"><input type="number" min="0" max="120" value="${xVal}" class="w-full cell-editable" data-index="${index}" data-type="x"></td>
+                    <td class="py-3 px-4 border"><input type="number" min="0" max="100" step="0.1" value="${data.y[index]}" class="w-full cell-editable" data-index="${index}" data-type="y"></td>
+                `;
+                
+                tableBody.appendChild(row);
+            });
+            
+            // 爲新添加的輸入框添加事件監聽
+            document.querySelectorAll('input[data-type="x"], input[data-type="y"]').forEach(input => {
+                input.addEventListener('change', function() {
+                    const index = parseInt(this.getAttribute('data-index'));
+                    const type = this.getAttribute('data-type');
+                    let value = parseFloat(this.value) || 0;
+                    
+                    // 限制值在有效範圍內
+                    if (type === 'x') {
+                        value = Math.max(0, Math.min(120, value));
+                    } else {
+                        value = Math.max(0, Math.min(100, value));
+                    }
+                    
+                    // 更新輸入框顯示的值
+                    this.value = value;
+                    
+                    data[type][index] = value;
+                    updateCharts();
+                });
+            });
+        }
+
+        // 導入CSV數據
+        function importCSVData(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            // 驗證文件類型
+            if (!file.name.endsWith('.csv')) {
+                alert('請選擇CSV格式的文件');
+                return;
+            }
+            
+            const reader = new FileReader();
+            
+            reader.onload = function(e) {
+                try {
+                    const content = e.target.result;
+                    const lines = content.split('\n')
+                        .map(line => line.trim())
+                        .filter(line => line.length > 0);
+                    
+                    if (lines.length < 2) {
+                        alert('CSV文件數據不足，請確保至少包含2行數據');
+                        return;
+                    }
+                    
+                    const x = [];
+                    const y = [];
+                    let startIndex = 0;
+                    
+                    // 檢查第一行是否爲表頭
+                    const firstLine = lines[0];
+                    if (firstLine.includes('學習時間') && firstLine.includes('成績')) {
+                        startIndex = 1; // 跳過表頭行
+                    }
+                    
+                    // 解析數據行
+                    for (let i = startIndex; i < lines.length; i++) {
+                        const line = lines[i];
+                        const [xStr, yStr] = line.split(',').map(item => item.trim());
+                        
+                        if (!xStr || !yStr) continue; // 跳過格式不正確的行
+                        
+                        const xVal = parseFloat(xStr);
+                        const yVal = parseFloat(yStr);
+                        
+                        // 驗證數值有效性
+                        if (isNaN(xVal) || isNaN(yVal)) continue;
+                        
+                        // 限制在有效範圍內
+                        const validX = Math.max(0, Math.min(120, xVal));
+                        const validY = Math.max(0, Math.min(100, yVal));
+                        
+                        x.push(validX);
+                        y.push(validY);
+                    }
+                    
+                    // 驗證解析結果
+                    if (x.length < 5) {
+                        alert('有效數據不足，請確保包含至少5個有效數據點');
+                        return;
+                    }
+                    
+                    // 更新數據
+                    data = {x, y};
+                    document.getElementById('data-count').value = x.length;
+                    updateDataTable();
+                    updateCharts();
+                    
+                    // 顯示成功消息
+                    alert(`成功導入 ${x.length} 條數據`);
+                    
+                } catch (error) {
+                    console.error('導入數據出錯:', error);
+                    alert('導入數據失敗，請檢查文件格式是否正確');
+                }
+            };
+            
+            reader.readAsText(file);
+            
+            // 重置文件輸入，允許重複選擇同一個文件
+            event.target.value = '';
+        }
+
+        // 導出CSV數據
+        function exportCSVData() {
+            // 構建CSV內容
+            let csvContent = "學習時間（分鐘）,成績（分）\n";
+            
+            data.x.forEach((xVal, index) => {
+                const yVal = data.y[index];
+                csvContent += `${xVal},${yVal}\n`;
+            });
+            
+            // 創建Blob對象
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            
+            // 創建下載鏈接
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            
+            // 設置文件名（包含當前日期）
+            const date = new Date();
+            const dateStr = `${date.getFullYear()}${(date.getMonth()+1).toString().padStart(2, '0')}${date.getDate().toString().padStart(2, '0')}`;
+            link.setAttribute('href', url);
+            link.setAttribute('download', `學習時間與成績數據_${dateStr}.csv`);
+            link.style.visibility = 'hidden';
+            
+            // 觸發下載
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        // 計算不同回歸模型的參數
+        function calculateRegressionParameters(modelType) {
+            const x = data.x;
+            const y = data.y;
+            const n = x.length;
+            
+            if (modelType === 'linear') {
+                // 綫性回歸: 成績 = a×學習時間 + b
+                let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
+                
+                for (let i = 0; i < n; i++) {
+                    sumX += x[i];
+                    sumY += y[i];
+                    sumXY += x[i] * y[i];
+                    sumX2 += x[i] * x[i];
+                }
+                
+                const a = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
+                const b = (sumY - a * sumX) / n;
+                
+                return {
+                    a: parseFloat(a.toFixed(3)),
+                    b: parseFloat(b.toFixed(1)),
+                    c: 0
+                };
+            } 
+            else if (modelType === 'quadratic') {
+                // 二次回歸: 成績 = a×學習時間² + b×學習時間 + c
+                let sumX = 0, sumX2 = 0, sumX3 = 0, sumX4 = 0;
+                let sumY = 0, sumXY = 0, sumX2Y = 0;
+                
+                for (let i = 0; i < n; i++) {
+                    const xVal = x[i];
+                    const x2 = xVal * xVal;
+                    const x3 = x2 * xVal;
+                    const x4 = x3 * xVal;
+                    
+                    sumX += xVal;
+                    sumX2 += x2;
+                    sumX3 += x3;
+                    sumX4 += x4;
+                    sumY += y[i];
+                    sumXY += xVal * y[i];
+                    sumX2Y += x2 * y[i];
+                }
+                
+                // 解綫性方程組
+                const A = sumX4;
+                const B = sumX3;
+                const C = sumX2;
+                const D = sumX3;
+                const E = sumX2;
+                const F = sumX;
+                const G = sumX2;
+                const H = sumX;
+                const I = n;
+                
+                const J = sumX2Y;
+                const K = sumXY;
+                const L = sumY;
+                
+                // 計算行列式
+                const det = A * (E * I - F * H) - B * (D * I - F * G) + C * (D * H - E * G);
+                
+                // 計算參數
+                const a = (J * (E * I - F * H) - B * (K * I - F * L) + C * (K * H - E * L)) / det;
+                const b = (A * (K * I - F * L) - J * (D * I - F * G) + C * (D * L - K * G)) / det;
+                const c = (A * (E * L - K * H) - B * (D * L - K * G) + J * (D * H - E * G)) / det;
+                
+                return {
+                    a: parseFloat(a.toFixed(5)),
+                    b: parseFloat(b.toFixed(3)),
+                    c: parseFloat(c.toFixed(1))
+                };
+            } 
+            else if (modelType === 'exponential') {
+                // 指數回歸: 成績 = ae^(bx) + c
+                // 取對數轉換爲綫性模型: ln(100-y) = ln(a) - bx (因爲成績上限是100)
+                
+                // 過濾掉接近100的值（避免取對數問題）
+                const validData = x.map((val, i) => ({x: val, y: y[i]}))
+                    .filter(item => item.y < 99);
+                
+                if (validData.length < 2) {
+                    return {a: 50, b: 0.02, c: 20}; // 退化情况
+                }
+                
+                let sumX = 0, sumLnY = 0, sumXLnY = 0, sumX2 = 0;
+                const m = validData.length;
+                
+                validData.forEach(item => {
+                    const lnY = Math.log(100 - item.y); // 基于成績上限100的變換
+                    sumX += item.x;
+                    sumLnY += lnY;
+                    sumXLnY += item.x * lnY;
+                    sumX2 += item.x * item.x;
+                });
+                
+                // 計算綫性回歸參數
+                const b = -( (m * sumXLnY - sumX * sumLnY) / (m * sumX2 - sumX * sumX) );
+                const lnA = (sumLnY + b * sumX) / m;
+                const a = Math.exp(lnA);
+                
+                // 估計偏移量c
+                let sumResiduals = 0;
+                validData.forEach(item => {
+                    const predicted = 100 - a * Math.exp(-b * item.x);
+                    sumResiduals += item.y - predicted;
+                });
+                const c = sumResiduals / m;
+                
+                return {
+                    a: parseFloat(a.toFixed(1)),
+                    b: parseFloat(b.toFixed(4)),
+                    c: parseFloat(c.toFixed(1))
+                };
+            }
+        }
+
+        // 計算R²值（决定係數）
+        function calculateRSquared(modelType, params) {
+            const x = data.x;
+            const y = data.y;
+            const n = x.length;
+            
+            // 計算y的平均值
+            const meanY = y.reduce((sum, val) => sum + val, 0) / n;
+            
+            // 計算總平方和 (SST)
+            const SST = y.reduce((sum, val) => sum + Math.pow(val - meanY, 2), 0);
+            
+            // 計算殘差平方和 (SSE)
+            let SSE = 0;
+            for (let i = 0; i < n; i++) {
+                let predicted;
+                if (modelType === 'linear') {
+                    predicted = params.a * x[i] + params.b;
+                } else if (modelType === 'quadratic') {
+                    predicted = params.a * x[i] * x[i] + params.b * x[i] + params.c;
+                } else { // exponential
+                    predicted = 100 - params.a * Math.exp(-params.b * x[i]) + params.c;
+                }
+                // 確保預測值在0-100範圍內
+                predicted = Math.max(0, Math.min(100, predicted));
+                SSE += Math.pow(y[i] - predicted, 2);
+            }
+            
+            // R² = 1 - (SSE/SST)
+            return parseFloat((1 - SSE/SST).toFixed(4));
+        }
+
+        // 使用模型進行預測
+        function predictY(xVal, modelType, params) {
+            let predicted;
+            if (modelType === 'linear') {
+                predicted = params.a * xVal + params.b;
+            } else if (modelType === 'quadratic') {
+                predicted = params.a * xVal * xVal + params.b * xVal + params.c;
+            } else { // exponential
+                predicted = 100 - params.a * Math.exp(-params.b * xVal) + params.c;
+            }
+            // 確保預測值在0-100範圍內
+            return Math.max(0, Math.min(100, predicted));
+        }
+
+        // 初始化散點圖
+        let scatterChart, modelChart;
+        
+        function initScatterChart() {
+            const ctx = document.getElementById('scatter-chart').getContext('2d');
+            
+            if (scatterChart) {
+                scatterChart.destroy();
+            }
+            
+            scatterChart = new Chart(ctx, {
+                type: 'scatter',
+                data: {
+                    datasets: [{
+                        label: '學習時間與成績',
+                        data: data.x.map((x, i) => ({x, y: data.y[i]})),
+                        backgroundColor: '#165DFF',
+                        pointRadius: 6,
+                        pointHoverRadius: 8
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            title: {
+                                display: true,
+                                text: '學習時間（分鐘）',
+                                font: {weight: 'bold'}
+                            },
+                            min: 0,
+                            max: 120,
+                            ticks: {
+                                stepSize: 20
+                            }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: '成績（分）',
+                                font: {weight: 'bold'}
+                            },
+                            min: 0,
+                            max: 100,
+                            ticks: {
+                                stepSize: 20
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return `學習${context.parsed.x}分鐘，成績${context.parsed.y}分`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // 初始化帶模型曲綫的圖表
+        function initModelChart() {
+            modelParameters = calculateRegressionParameters(currentModel);
+            const rSquared = calculateRSquared(currentModel, modelParameters);
+            
+            // 更新參數顯示
+            document.getElementById('param-a').textContent = modelParameters.a;
+            document.getElementById('param-b').textContent = modelParameters.b;
+            
+            // 更新R²值
+            document.getElementById('r-squared').textContent = rSquared;
+            
+            // 更新公式顯示
+            let formulaText = '';
+            if (currentModel === 'linear') {
+                formulaText = `成績 = ${modelParameters.a}×學習時間 + ${modelParameters.b}`;
+                document.getElementById('param-c-container').classList.add('hidden');
+            } else if (currentModel === 'quadratic') {
+                formulaText = `成績 = ${modelParameters.a}×學習時間² + ${modelParameters.b}×學習時間 + ${modelParameters.c}`;
+                document.getElementById('param-c').textContent = modelParameters.c;
+                document.getElementById('param-c-container').classList.remove('hidden');
+            } else { // exponential
+                formulaText = `成績 = 100 - ${modelParameters.a}e^(-${modelParameters.b}×學習時間) + ${modelParameters.c}`;
+                document.getElementById('param-c').textContent = modelParameters.c;
+                document.getElementById('param-c-container').classList.remove('hidden');
+            }
+            document.getElementById('regression-formula').textContent = formulaText;
+            
+            // 生成模型曲綫數據
+            const modelData = [];
+            
+            // 生成50個點來繪製平滑曲綫（0-120分鐘）
+            for (let i = 0; i <= 50; i++) {
+                const xVal = 120 * (i / 50); // 0到120分鐘
+                const yVal = predictY(xVal, currentModel, modelParameters);
+                modelData.push({x: xVal, y: yVal});
+            }
+            
+            const ctx = document.getElementById('model-chart').getContext('2d');
+            
+            if (modelChart) {
+                modelChart.destroy();
+            }
+            
+            modelChart = new Chart(ctx, {
+                type: 'scatter',
+                data: {
+                    datasets: [
+                        {
+                            label: '實際數據',
+                            data: data.x.map((x, i) => ({x, y: data.y[i]})),
+                            backgroundColor: '#165DFF',
+                            pointRadius: 6,
+                            pointHoverRadius: 8
+                        },
+                        {
+                            label: currentModel === 'linear' ? '綫性回歸綫' : 
+                                   currentModel === 'quadratic' ? '二次回歸綫' : '指數回歸綫',
+                            data: modelData,
+                            type: 'line',
+                            borderColor: '#FF7D00',
+                            borderWidth: 3,
+                            pointRadius: 0,
+                            fill: false,
+                            tension: 0.1
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            title: {
+                                display: true,
+                                text: '學習時間（分鐘）',
+                                font: {weight: 'bold'}
+                            },
+                            min: 0,
+                            max: 120,
+                            ticks: {
+                                stepSize: 20
+                            }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: '成績（分）',
+                                font: {weight: 'bold'}
+                            },
+                            min: 0,
+                            max: 100,
+                            ticks: {
+                                stepSize: 20
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'top'
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    if (context.datasetIndex === 0) {
+                                        return `學習${context.parsed.x}分鐘，成績${context.parsed.y}分`;
+                                    } else {
+                                        return `預測：學習${context.parsed.x.toFixed(0)}分鐘，成績${context.parsed.y.toFixed(1)}分`;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // 更新所有圖表
+        function updateCharts() {
+            if (scatterChart) {
+                initScatterChart();
+            }
+            
+            if (modelChart) {
+                initModelChart();
+            }
+            
+            // 如果在預測步驟，更新預測
+            if (document.getElementById('step-4').classList.contains('hidden') === false) {
+                calculatePrediction();
+            }
+        }
+
+        // 計算預測值和誤差
+        function calculatePrediction() {
+            const x = parseFloat(document.getElementById('prediction-x').value);
+            const actualY = parseFloat(document.getElementById('actual-y').value);
+            
+            // 確保輸入在有效範圍內
+            const validX = Math.max(0, Math.min(120, x));
+            const validActualY = Math.max(0, Math.min(100, actualY));
+            
+            // 更新輸入框顯示
+            document.getElementById('prediction-x').value = validX;
+            document.getElementById('actual-y').value = validActualY;
+            
+            const predictedY = predictY(validX, currentModel, modelParameters);
+            const error = Math.abs(predictedY - validActualY);
+            
+            document.getElementById('predicted-y').textContent = predictedY.toFixed(1);
+            document.getElementById('prediction-error').textContent = error.toFixed(1);
+        }
+
+        // 切換模型
+        function switchModel(modelType) {
+            currentModel = modelType;
+            
+            // 更新按鈕樣式
+            document.querySelectorAll('[id^="model-"]').forEach(btn => {
+                btn.classList.remove('model-active', 'bg-primary', 'text-white');
+                btn.classList.add('bg-gray-100', 'hover:bg-gray-200');
+            });
+            document.getElementById(`model-${modelType}`).classList.add('model-active', 'bg-primary', 'text-white');
+            document.getElementById(`model-${modelType}`).classList.remove('bg-gray-100', 'hover:bg-gray-200');
+            
+            // 更新模型圖表和預測
+            updateCharts();
+        }
+
+        // 步驟導航
+        function showStep(stepNumber) {
+            // 隱藏所有步驟
+            document.querySelectorAll('[id^="step-"]').forEach(el => {
+                el.classList.add('hidden');
+            });
+            
+            // 重置所有步驟指示器
+            document.querySelectorAll('[id^="step-indicator-"]').forEach(el => {
+                el.classList.remove('step-active');
+                el.classList.add('border-gray-200', 'text-gray-500');
+            });
+            
+            // 顯示當前步驟
+            document.getElementById(`step-${stepNumber}`).classList.remove('hidden');
+            document.getElementById(`step-indicator-${stepNumber}`).classList.add('step-active');
+            document.getElementById(`step-indicator-${stepNumber}`).classList.remove('border-gray-200', 'text-gray-500');
+            
+            // 初始化對應步驟的圖表
+            if (stepNumber === 2 && !scatterChart) {
+                initScatterChart();
+            }
+            if (stepNumber === 3) {
+                initModelChart();
+            }
+            if (stepNumber === 4) {
+                calculatePrediction();
+            }
+        }
+
+        // 頁面加載完成後初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            // 初始化數據表格
+            updateDataTable();
+            
+            // 隨機數據按鈕事件
+            document.getElementById('random-data-btn').addEventListener('click', generateRandomData);
+            
+            // 數據數量輸入框事件 - 按回車時生成數據
+            document.getElementById('data-count').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    generateRandomData();
+                }
+            });
+            
+            // 導入數據事件
+            document.getElementById('import-data').addEventListener('change', importCSVData);
+            
+            // 導出數據事件
+            document.getElementById('export-data').addEventListener('click', exportCSVData);
+            
+            // 模型切換事件
+            document.getElementById('model-linear').addEventListener('click', () => switchModel('linear'));
+            document.getElementById('model-quadratic').addEventListener('click', () => switchModel('quadratic'));
+            document.getElementById('model-exponential').addEventListener('click', () => switchModel('exponential'));
+            
+            // 預測相關事件
+            document.getElementById('calculate-prediction').addEventListener('click', calculatePrediction);
+            document.getElementById('actual-y').addEventListener('change', calculatePrediction);
+            document.getElementById('prediction-x').addEventListener('change', calculatePrediction);
+            
+            // 步驟導航事件
+            document.getElementById('to-step-2').addEventListener('click', () => showStep(2));
+            document.getElementById('back-to-step-1').addEventListener('click', () => showStep(1));
+            document.getElementById('to-step-3').addEventListener('click', () => showStep(3));
+            document.getElementById('back-to-step-2').addEventListener('click', () => showStep(2));
+            document.getElementById('to-step-4').addEventListener('click', () => showStep(4));
+            document.getElementById('back-to-step-3').addEventListener('click', () => showStep(3));
+            document.getElementById('restart-experiment').addEventListener('click', () => {
+                // 重置數據數量
+                document.getElementById('data-count').value = 10;
+                
+                // 重置數據
+                data = {
+                    x: [20, 30, 40, 10, 50, 25, 35, 45, 5, 55],
+                    y: [50, 58, 65, 42, 73, 55, 62, 70, 38, 78]
+                };
+                
+                // 更新數據表格
+                updateDataTable();
+                
+                // 重置預測工具
+                document.getElementById('prediction-x').value = 60;
+                document.getElementById('actual-y').value = 62;
+                
+                // 重置模型爲綫性回歸
+                currentModel = 'linear';
+                switchModel('linear');
+                
+                // 重置圖表
+                if (scatterChart) {
+                    scatterChart.destroy();
+                    scatterChart = null;
+                }
+                if (modelChart) {
+                    modelChart.destroy();
+                    modelChart = null;
+                }
+                
+                showStep(1);
+            });
+            
+            // 步驟指示器點擊事件
+            document.getElementById('step-indicator-1').addEventListener('click', () => showStep(1));
+            document.getElementById('step-indicator-2').addEventListener('click', () => showStep(2));
+            document.getElementById('step-indicator-3').addEventListener('click', () => showStep(3));
+            document.getElementById('step-indicator-4').addEventListener('click', () => showStep(4));
+            
+            // 初始顯示第一步
+            showStep(1);
+        });
+    </script>
+</body>
+</html>
